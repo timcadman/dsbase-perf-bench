@@ -40,7 +40,7 @@ PERF_FUNCTIONS <- c("abs", "asCharacter", "asDataMatrix", "asInteger", "asList",
                     "unique", "sqrt")
 
 # --- Measurement settings ---
-PERF_DURATION_SEC <- 20    # seconds per test_that loop (read by perf.testduration())
+PERF_DURATION_SEC <- 5     # seconds per test_that loop (read by perf.testduration())
 
 # Relative to the directory you run from (the tooling repo root, or a worktree
 # that has had perf-bench/ copied in). run_compare.sh collects per-arm results

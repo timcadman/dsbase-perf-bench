@@ -10,7 +10,7 @@
 # Env knobs: ARMADILLO_PROFILE (default "default"), SMOKE_FN (default "mean"),
 #            PERF_DURATION_SEC (default 5).
 # ------------------------------------------------------------------------------
-
+library(dsBaseClient)
 source("perf-bench/config.R")
 profile <- Sys.getenv("ARMADILLO_PROFILE", "default")
 fn      <- Sys.getenv("SMOKE_FN", "mean")
@@ -26,8 +26,13 @@ b <- DSI::newDSLoginBuilder(.silent = TRUE)
 b$append(server = "sim1", url = ARMADILLO_URL, table = "datashield/cnsim/CNSIM1",
          user = ADMIN_USER, password = ADMIN_PASS,
          driver = "ArmadilloDriver", profile = profile)
-conns <- DSI::datashield.login(b$build(), assign = TRUE, variables = list("LAB_TSC"))
-res <- tryCatch(ds.mean("D$LAB_TSC"), error = function(e) {
+conns <- DSI::datashield.login(b$build(), assign = TRUE)
+print(datashield.tables(conns))
+print(ds.ls())
+print(ds.length("D"))
+print(ds.dim("D"))
+print(ds.colnames("D"))
+res <- tryCatch(ds.mean("D$LAB_TSC", datasources = conns), error = function(e) {
   message("\nds.mean failed: ", conditionMessage(e))
   message("---- datashield.errors() ----")
   print(DSI::datashield.errors())
