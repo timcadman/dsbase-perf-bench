@@ -41,9 +41,12 @@ run_arm <- function(label) {
   # test prints its raw measured rate instead of a percentage-of-reference.
   Sys.unsetenv("PERF_PROFILE")
 
-  options(opal.user      = ADMIN_USER,
-          opal.password  = ADMIN_PASS,
-          default_driver = "ArmadilloDriver")
+  # v7.0-dev reads opal.*, v6.3.6-dev (post-#682) reads armadillo.* — set both
+  options(opal.user          = ADMIN_USER,
+          opal.password      = ADMIN_PASS,
+          armadillo.user     = ADMIN_USER,
+          armadillo.password = ADMIN_PASS,
+          default_driver     = "ArmadilloDriver")
 
   message(sprintf("[%s] %s: %d functions vs profile '%s' (%ds each)...",
                   label, arm$pretty, length(PERF_FUNCTIONS), arm$profile, PERF_DURATION_SEC))

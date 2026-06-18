@@ -40,6 +40,10 @@ for entry in "${ARMS[@]}"; do
   wt="$CLIENT_REPO-$label"          # e.g. .../ds-core/dsBaseClient-v636
 
   echo "--- arm '$label' : dsBaseClient $cbranch ---"
+  # start clean: drop any worktree left behind by a previous (failed) run so
+  # re-runs are idempotent (worktree add refuses if the path already exists)
+  git -C "$CLIENT_REPO" worktree remove --force "$wt" 2>/dev/null || true
+  git -C "$CLIENT_REPO" worktree prune
   git -C "$CLIENT_REPO" worktree add --force --detach "$wt" "origin/$cbranch"
   rm -rf "$wt/perf-bench"
   cp -R "$TOOLING_ROOT/perf-bench" "$wt/perf-bench"   # bring tooling into the worktree
