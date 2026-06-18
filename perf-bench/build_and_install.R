@@ -15,7 +15,9 @@ library(httr)
 library(jsonlite)
 source("perf-bench/config.R")
 
-BUILD_DIR <- file.path("perf-bench", "build")   # relative to the tooling repo root
+# Absolute path so the dsBase worktree (created via `git -C <dsBase>`) and the
+# subsequent `R CMD build` agree regardless of each process's working directory.
+BUILD_DIR <- file.path(normalizePath("."), "perf-bench", "build")
 dir.create(BUILD_DIR, showWarnings = FALSE, recursive = TRUE)
 
 # Build a dsBase source tarball from a remote branch, using a throwaway git
