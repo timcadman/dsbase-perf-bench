@@ -47,26 +47,54 @@ token <- armadillo.get_token(ARMADILLO_URL)
 auth  <- add_headers(Authorization = paste("Bearer", token))
 def   <- content(GET(ARMADILLO_URL, path = "ds-profiles/default", auth))
 
+# Mirrors scripts/release/lib/setup-profiles.R in molgenis-service-armadillo:
+# a non-empty options map with a datashield.seed is required (an empty map
+# serialises to [] and is rejected with 400), resourcer must be whitelisted,
+# success is HTTP 204, and a freshly created profile must then be started.
+profile_exists <- function(name)
+  status_code(GET(ARMADILLO_URL, path = paste0("ds-profiles/", name), auth)) == 200
+
+free_port <- function(preferred) {
+  used <- vapply(content(GET(ARMADILLO_URL, path = "ds-profiles", auth)),
+                 function(p) as.integer(p$port %||% NA), integer(1))
+  port <- preferred
+  while (port %in% used) port <- port + 1
+  port
+}
+`%||%` <- function(a, b) if (is.null(a)) b else a
+
+start_profile <- function(name) {
+  r <- POST(paste0(ARMADILLO_URL, "/ds-profiles/", name, "/start"), auth)
+  if (!status_code(r) %in% c(204L, 409L))   # 409 = already running
+    stop("starting profile '", name, "' failed (", status_code(r), ")")
+  message("profile '", name, "' running.")
+}
+
 create_profile <- function(arm) {
+  whitelist <- as.list(unique(c("dsBase", "resourcer", unlist(def$packageWhitelist))))
   body <- list(
     name              = arm$profile,
-    image             = def$image,                 # clone default's base image
+    image             = def$image,                       # clone default's base image
     host              = "localhost",
-    port              = arm$port,                   # distinct port per profile
-    packageWhitelist  = unique(c(unlist(def$packageWhitelist), "dsBase")),
-    functionBlacklist = unlist(def$functionBlacklist),
-    options           = def$options)
-  stop_for_status(PUT(ARMADILLO_URL, path = "ds-profiles",
-                      body = toJSON(body, auto_unbox = TRUE),
-                      content_type_json(), auth))
-  message("profile '", arm$profile, "' created/updated (port ", arm$port, ").")
+    port              = free_port(arm$port),
+    packageWhitelist  = whitelist,
+    functionBlacklist = as.list(unlist(def$functionBlacklist)),
+    options           = list(datashield.seed = round(runif(1, 1e8, 9.99e8))))
+  r <- PUT(ARMADILLO_URL, path = "ds-profiles",
+           body = toJSON(body, auto_unbox = TRUE), content_type_json(), auth)
+  if (status_code(r) != 204L)
+    stop("creating profile '", arm$profile, "' failed (", status_code(r), "): ",
+         content(r, "text", encoding = "UTF-8"))
+  message("profile '", arm$profile, "' created.")
 }
 
 for (arm in ARMS) {
   message("=== ", arm$pretty, " (", arm$dsbase_branch, " -> ", arm$profile, ") ===")
   tarball <- build_dsbase(arm$dsbase_branch)
-  create_profile(arm)
-  armadillo.install_packages(tarball, profile = arm$profile)  # no manual start needed
+  if (profile_exists(arm$profile)) message("profile '", arm$profile, "' exists; reusing.")
+  else create_profile(arm)
+  start_profile(arm$profile)                                   # must be running to install
+  armadillo.install_packages(tarball, profile = arm$profile)
   message("installed dsBase into '", arm$profile, "'.")
 }
 message("build_and_install.R: both profiles ready.")
