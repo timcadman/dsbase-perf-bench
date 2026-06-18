@@ -22,8 +22,9 @@ TOOLING_ROOT="$(cd "$(dirname "$0")/.." && pwd)"   # this repo (contains perf-be
 CLIENT_REPO="/Users/tcadman/github-repos/ds-core/dsBaseClient"   # keep == DSBASECLIENT_REPO in config.R
 cd "$TOOLING_ROOT"
 
+[[ -f "$TOOLING_ROOT/perf-bench/secrets.env" ]] && source "$TOOLING_ROOT/perf-bench/secrets.env"
 if [[ -z "${ARMADILLO_ADMIN_PASS:-}" ]]; then
-  echo "ERROR: export ARMADILLO_ADMIN_PASS before running." >&2; exit 1
+  echo "ERROR: set ARMADILLO_ADMIN_PASS in perf-bench/secrets.env (copy secrets.env.example)." >&2; exit 1
 fi
 
 # Keep in sync with ARMS in config.R:  label : client_branch  (profile derived in R)
