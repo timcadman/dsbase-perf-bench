@@ -1,0 +1,21 @@
+# --- never commit secrets ---
+.Renviron
+*.env
+.env
+connection_to_datasets/local_settings.csv
+local_settings.csv
+
+# --- generated outputs / build artifacts ---
+perf-bench/results/
+perf-bench/build/
+*.tar.gz
+*.png
+*.pdf
+
+# --- R / editor cruft ---
+.Rproj.user/
+.Rhistory
+.RData
+.Ruserdata
+.DS_Store
+.idea/
