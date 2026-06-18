@@ -67,7 +67,30 @@ start_profile <- function(name) {
   r <- POST(paste0(ARMADILLO_URL, "/ds-profiles/", name, "/start"), auth)
   if (!status_code(r) %in% c(204L, 409L))   # 409 = already running
     stop("starting profile '", name, "' failed (", status_code(r), ")")
-  message("profile '", name, "' running.")
+  message("profile '", name, "' start requested.")
+}
+
+# `start` returns as soon as the container is created; the RServe inside needs a
+# few seconds before it accepts connections (install otherwise 503s). Poll status.
+wait_ready <- function(name, tries = 24, wait = 5) {
+  for (i in seq_len(tries)) {
+    st <- content(GET(ARMADILLO_URL, path = paste0("ds-profiles/", name), auth))$container$status
+    if (!is.null(st) && st == "RUNNING") { message("profile '", name, "' RUNNING."); return(invisible()) }
+    Sys.sleep(wait)
+  }
+  message("warning: '", name, "' not reported RUNNING after wait; trying install anyway.")
+}
+
+# Retry install on transient 503s while the RServe finishes warming up.
+install_with_retry <- function(tarball, profile, tries = 8, wait = 8) {
+  for (i in seq_len(tries)) {
+    ok <- tryCatch({ armadillo.install_packages(tarball, profile = profile); TRUE },
+                   error = function(e) { message("install attempt ", i, "/", tries,
+                                                  " failed: ", conditionMessage(e)); FALSE })
+    if (ok) return(invisible())
+    Sys.sleep(wait)
+  }
+  stop("install of ", basename(tarball), " into '", profile, "' failed after ", tries, " attempts")
 }
 
 create_profile <- function(arm) {
@@ -94,7 +117,8 @@ for (arm in ARMS) {
   if (profile_exists(arm$profile)) message("profile '", arm$profile, "' exists; reusing.")
   else create_profile(arm)
   start_profile(arm$profile)                                   # must be running to install
-  armadillo.install_packages(tarball, profile = arm$profile)
+  wait_ready(arm$profile)
+  install_with_retry(tarball, arm$profile)
   message("installed dsBase into '", arm$profile, "'.")
 }
 message("build_and_install.R: both profiles ready.")
