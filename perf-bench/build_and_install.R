@@ -41,84 +41,74 @@ build_dsbase <- function(branch) {
   dest
 }
 
-# Authenticate once (interactive OAuth) and prepare the admin auth header.
-armadillo.login(ARMADILLO_URL)
-token <- armadillo.get_token(ARMADILLO_URL)
-auth  <- add_headers(Authorization = paste("Bearer", token))
-def   <- content(GET(ARMADILLO_URL, path = "ds-profiles/default", auth))
-
-# Mirrors scripts/release/lib/setup-profiles.R in molgenis-service-armadillo:
-# a non-empty options map with a datashield.seed is required (an empty map
-# serialises to [] and is rejected with 400), resourcer must be whitelisted,
-# success is HTTP 204, and a freshly created profile must then be started.
-profile_exists <- function(name)
-  status_code(GET(ARMADILLO_URL, path = paste0("ds-profiles/", name), auth)) == 200
-
-free_port <- function(preferred) {
-  used <- vapply(content(GET(ARMADILLO_URL, path = "ds-profiles", auth)),
-                 function(p) as.integer(p$port %||% NA), integer(1))
-  port <- preferred
-  while (port %in% used) port <- port + 1
-  port
-}
 `%||%` <- function(a, b) if (is.null(a)) b else a
 
-start_profile <- function(name) {
-  r <- POST(paste0(ARMADILLO_URL, "/ds-profiles/", name, "/start"), auth)
-  if (!status_code(r) %in% c(204L, 409L))   # 409 = already running
-    stop("starting profile '", name, "' failed (", status_code(r), ")")
-  message("profile '", name, "' start requested.")
+# Build BOTH tarballs first (no auth needed) so the admin token stays fresh for
+# the install calls, and so they're ready for a manual UI install if needed.
+tarballs <- setNames(lapply(ARMS, function(a) build_dsbase(a$dsbase_branch)), names(ARMS))
+
+# If you've already created the profiles AND installed dsBase via the UI, set
+# SKIP_INSTALL=1 to bypass all server interaction and go straight to measuring.
+if (nzchar(Sys.getenv("SKIP_INSTALL"))) {
+  message("SKIP_INSTALL set: assuming profiles already have the right dsBase. ",
+          "Tarballs are at:\n  ", paste(unlist(tarballs), collapse = "\n  "))
+  quit(save = "no", status = 0)
 }
 
-# `start` returns as soon as the container is created; the RServe inside needs a
-# few seconds before it accepts connections (install otherwise 503s). Poll status.
+# Authenticate (interactive OAuth). Fetch the token fresh per call so long waits
+# between build and install don't expire it.
+armadillo.login(ARMADILLO_URL)
+auth <- function() add_headers(Authorization = paste("Bearer", armadillo.get_token(ARMADILLO_URL)))
+
+profile_exists <- function(name)
+  status_code(GET(ARMADILLO_URL, path = paste0("ds-profiles/", name), auth())) == 200
+
+start_profile <- function(name) {
+  r <- POST(paste0(ARMADILLO_URL, "/ds-profiles/", name, "/start"), auth())
+  if (!status_code(r) %in% c(204L, 409L))   # 409 = already running
+    stop("starting profile '", name, "' failed (", status_code(r), ")")
+}
+
+# `start` returns before the RServe accepts connections (install otherwise 503s).
 wait_ready <- function(name, tries = 24, wait = 5) {
   for (i in seq_len(tries)) {
-    st <- content(GET(ARMADILLO_URL, path = paste0("ds-profiles/", name), auth))$container$status
+    st <- content(GET(ARMADILLO_URL, path = paste0("ds-profiles/", name), auth()))$container$status
     if (!is.null(st) && st == "RUNNING") { message("profile '", name, "' RUNNING."); return(invisible()) }
     Sys.sleep(wait)
   }
   message("warning: '", name, "' not reported RUNNING after wait; trying install anyway.")
 }
 
-# Retry install on transient 503s while the RServe finishes warming up.
-install_with_retry <- function(tarball, profile, tries = 8, wait = 8) {
+install_with_retry <- function(tarball, profile, tries = 6, wait = 8) {
   for (i in seq_len(tries)) {
-    ok <- tryCatch({ armadillo.install_packages(tarball, profile = profile); TRUE },
+    ok <- tryCatch({ armadillo.get_token(ARMADILLO_URL)               # refresh session
+                     armadillo.install_packages(tarball, profile = profile); TRUE },
                    error = function(e) { message("install attempt ", i, "/", tries,
                                                   " failed: ", conditionMessage(e)); FALSE })
-    if (ok) return(invisible())
+    if (ok) return(invisible(TRUE))
     Sys.sleep(wait)
   }
-  stop("install of ", basename(tarball), " into '", profile, "' failed after ", tries, " attempts")
+  FALSE
 }
 
-create_profile <- function(arm) {
-  whitelist <- as.list(unique(c("dsBase", "resourcer", unlist(def$packageWhitelist))))
-  body <- list(
-    name              = arm$profile,
-    image             = def$image,                       # clone default's base image
-    host              = "localhost",
-    port              = free_port(arm$port),
-    packageWhitelist  = whitelist,
-    functionBlacklist = as.list(unlist(def$functionBlacklist)),
-    options           = list(datashield.seed = round(runif(1, 1e8, 9.99e8))))
-  r <- PUT(ARMADILLO_URL, path = "ds-profiles",
-           body = toJSON(body, auto_unbox = TRUE), content_type_json(), auth)
-  if (status_code(r) != 204L)
-    stop("creating profile '", arm$profile, "' failed (", status_code(r), "): ",
-         content(r, "text", encoding = "UTF-8"))
-  message("profile '", arm$profile, "' created.")
-}
+manual_help <- function(arm, tarball)
+  stop("\nCould not auto-install into '", arm$profile, "'.\n",
+       "Do it via the Armadillo UI, then re-run with SKIP_INSTALL=1:\n",
+       "  1. Profiles -> ", arm$profile, " (create if missing: same image as 'default',\n",
+       "     whitelist must include dsBase + resourcer, set a datashield seed)\n",
+       "  2. install this package tarball:\n     ", tarball, "\n",
+       "  3. SKIP_INSTALL=1 bash perf-bench/run_compare.sh\n", call. = FALSE)
 
 for (arm in ARMS) {
   message("=== ", arm$pretty, " (", arm$dsbase_branch, " -> ", arm$profile, ") ===")
-  tarball <- build_dsbase(arm$dsbase_branch)
-  if (profile_exists(arm$profile)) message("profile '", arm$profile, "' exists; reusing.")
-  else create_profile(arm)
-  start_profile(arm$profile)                                   # must be running to install
+  tarball <- tarballs[[arm$label]]
+  if (!profile_exists(arm$profile))
+    stop("profile '", arm$profile, "' not found. Create it in the Armadillo UI ",
+         "(same image as 'default'; whitelist must include dsBase + resourcer; set a ",
+         "datashield seed), then re-run.", call. = FALSE)
+  start_profile(arm$profile)
   wait_ready(arm$profile)
-  install_with_retry(tarball, arm$profile)
+  if (!install_with_retry(tarball, arm$profile)) manual_help(arm, tarball)
   message("installed dsBase into '", arm$profile, "'.")
 }
 message("build_and_install.R: both profiles ready.")
