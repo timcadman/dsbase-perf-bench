@@ -27,7 +27,16 @@ b$append(server = "sim1", url = ARMADILLO_URL, table = "datashield/cnsim/CNSIM1"
          user = ADMIN_USER, password = ADMIN_PASS,
          driver = "ArmadilloDriver", profile = profile)
 conns <- DSI::datashield.login(b$build(), assign = TRUE, variables = list("LAB_TSC"))
-print(ds.mean("D$LAB_TSC"))
+res <- tryCatch(ds.mean("D$LAB_TSC"), error = function(e) {
+  message("\nds.mean failed: ", conditionMessage(e))
+  message("---- datashield.errors() ----")
+  print(DSI::datashield.errors())
+  DSI::datashield.logout(conns)
+  stop("Stage 1 FAILED — see the server-side DataSHIELD error above. ",
+       "If it's a meanDS signature/version error, it's a client/server mismatch ",
+       "on the 'default' profile; the matched per-arm builds avoid it.")
+})
+print(res)
 DSI::datashield.logout(conns)
 message("Stage 1 OK: server reachable, basic auth works, cnsim readable.\n")
 
