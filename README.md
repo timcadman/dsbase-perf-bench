@@ -45,6 +45,13 @@ profile and reverts everything it touches):
 bash perf-bench/smoke.sh
 ```
 
+If Stage 1 reports the cnsim tables are missing, upload them once (shared storage,
+so it covers all profiles):
+
+```bash
+bash perf-bench/upload_data.sh
+```
+
 **Full comparison** (builds both dsBase versions, installs into isolated
 profiles, runs both arms, plots):
 
@@ -64,6 +71,7 @@ OAuth). Outputs land in `perf-bench/results/` (git-ignored).
 | `perf-bench/inject_harness.R` | idempotent URL/profile support injection (per worktree)     |
 | `perf-bench/run_perf.R`       | `run_arm(label)`: filtered `devtools::test`, capture rates  |
 | `perf-bench/plot_perf.R`      | comparison figures + `perf_comparison.csv`                  |
+| `perf-bench/upload_data.sh` / `upload_data.R` | upload cnsim tables to the server (idempotent) |
 | `perf-bench/smoke.sh`         | quick connection + capture check (no builds)                |
 | `perf-bench/smoke_test.R`     | the two-stage smoke logic invoked by `smoke.sh`             |
 | `perf-bench/run_compare.sh`   | end-to-end orchestrator (worktrees, build, run, plot)       |
